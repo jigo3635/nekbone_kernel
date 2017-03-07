@@ -4,6 +4,7 @@ S=
 OPT_INCDIR:=./
 OBJDIR=obj
 F77=
+CC=
 P=
 PPPO=
 PPS=
@@ -18,6 +19,8 @@ lFLAGS = $(USR_LFLAGS)
 
 PPS_F = $(patsubst %,$(PPPO)-D%,$(PPS))
 
+PPS_C = $(patsubst %,-D%,$(PPS))
+
 #NEW #########################################################################
 EXTRA = driver.o mxm_wrapper.o semhat.o speclib.o math.o
 
@@ -26,10 +29,11 @@ EXTRA = driver.o mxm_wrapper.o semhat.o speclib.o math.o
 MXM = mxm_std.o 
 
 #####################################################################################
-TMP0 = $(EXTRA) $(MXM)
+TMP0 = $(EXTRA) $(MXM)  $(USR)
 NOBJS_F0 = $(patsubst %,$(OBJDIR)/%,$(TMP0))
+NOBJS_C0 = $(patsubst %,$(OBJDIR)/%,$(TMP2))
 
-NOBJS0 = $(NOBJS_F0) 
+NOBJS0 = $(NOBJS_F0)  $(NOBJS_C0)
 ##############################################################################
 
 L0 = $(G) -O0
@@ -47,6 +51,7 @@ cFL0   = $(L0) $(PPS_C)
 cFL2   = $(L2) $(PPS_C) 
 cFL3   = $(L3) $(PPS_C) 
 cFL4   = $(L4) $(PPS_C) 
+
 ################################################################################
 all : nekproxy
 
@@ -66,7 +71,7 @@ nekproxy: 	objdir $(NOBJS0)
 	echo -e "\033[0m"; \
 	fi
 clean:
-	rm -rf ./obj ${BINNAME}
+	rm -rf ./obj ${BINNAME} 
 
 $(NOBJS_F0) : SIZE
 # CORE      ############################################################################

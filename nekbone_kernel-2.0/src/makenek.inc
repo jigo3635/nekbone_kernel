@@ -55,6 +55,24 @@ fi
 \rm test_f77.* 2>/dev/null
 
 
+# test C compiler
+which `echo $CC | awk '{print $1}'` 1>/dev/null
+if [ $? -ne 0 ]; then
+  echo "FATAL ERROR: Cannot find $CC!"
+  exit 1
+fi
+\rm test_cc.o 2>/dev/null
+cat > test_cc.c << _ACEOF
+      void function(){}
+_ACEOF
+$CC -c test_cc.c 1>/dev/null
+if [ ! -f test_cc.o ]; then
+  echo "FATAL ERROR: Basic compiler test for $CC failed!"
+  exit 1
+fi
+\rm test_cc.* 2>/dev/null
+
+
 # initial clean-up
 rm -f nekkernel 2>/dev/null
 
@@ -167,6 +185,21 @@ if [ "$USR_LIB" != "" ]; then
     USR_LFLAGS="${USR_LFLAGS} ${USR_LIB}"
 fi
 
+
+if [ "$IFSIMD" == "true" -o "$IFSIMD" == "yes" ]; then
+   IFSIMD="true"
+   IFXSMM="false"
+   PPLIST="${PPLIST} SIMD"
+   export ${IFSIMD}	     
+fi 
+
+if [ "$IFXSMM" == "true" -o "$IFXSMM" == "yes" ]; then
+   IFXSMM="true"
+   IFSIMD="false"
+   PPLIST="${PPLIST} XSMM"
+   export ${IFXSMM}	  
+fi 
+
 # tweak makefile template 
 echo "generating makefile ..."
 rm -rf makefile 2>/dev/null
@@ -209,6 +242,10 @@ else
 fi
 \rm .makefile 2>/dev/null
 
+if [ "${USR_INCDIR}" != "" ]; then   
+   sed -i "/^OPT_INCDIR*/ s,$, ${USR_INCDIR}," makefile
+fi
+
 # tweak SIZE file
 if [ -f "./SIZE" ]; then
   cat SIZE | grep -i 'lx1' >/dev/null
@@ -220,3 +257,4 @@ fi
 if [ $NOCOMPILE -eq 1 ]; then
   exit 0
 fi 
+
