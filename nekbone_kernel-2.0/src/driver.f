@@ -8,17 +8,31 @@ c      g - geometric factors for SEM operator
 c
 c      Work arrays:  wk  
  
+#ifdef XSMM
+      USE :: LIBXSMM
+      USE :: STREAM_UPDATE_KERNELS
+#endif
+
       include 'SIZE'
       include 'INPUT'
+
+      include 'mpif.h'
 
       parameter (lt=lx1*ly1*lz1*lelt)
       real w(lt),u(lt),gxyz(6*lt)          
       real ur(lt),us(lt),ut(lt),wk(lt)
-      
-c      write(*,*) "0"
+      real flop_a, flop_t, dur_a, dur_t
 
-      call semhat(ah,wxm1,ch,dmx1,zgm1,bh,lx1-1) ! find GLL weights and pts
+      integer mpierror, myrank, procs
+      integer iters
 
+      iters=100
+
+      call mpi_init(mpierror)
+      call mpi_comm_size(mpi_comm_world, procs, mpierror)
+      call mpi_comm_rank(mpi_comm_world, myrank, mpierror)
+
+      call semhat(ah,wxm1,ch,dxm1,zgm1,bh,lx1-1) ! find GLL weights and pts
       call transpose(dxtm1,lx1,dxm1,lx1)         ! transpose D matrix
       call setup_g(gxyz)                         ! geometric factors
 
@@ -26,19 +40,50 @@ c      write(*,*) "0"
       call setup_u(u,n)                          ! fill u-vector
 
       call cpu_time(t0)
-      call ax(w,u,gxyz,ur,us,ut,wk,n)            !return w=A*u
+
+#ifdef XSMM
+      call ax_xsmm(w,u,gxyz,ur,us,ut,wk,n,iters, dur_a) !return w=A*u
+#else
+      do i=1,iters
+         call ax(w,u,gxyz,ur,us,ut,wk,n) !return w=A*u
+      enddo
+#endif
+
       call cpu_time(t1)
       time1 = t1-t0
-	      
-      write(*,*) "Initialization time: " ,t0
-      write(*,*) "Time in ax(): ",  time1
 
-c      write(6,1) "Initialization time: " ,t0
-c      write(6,1) "Time in ax(): ",  time1
-c 1    format(a30,1e14.5) 
+!      flop_a = (15*n + 12*lx1*n)*1.e-6/time1
+      flop_a = 1e-9*(12.*lx1-4)*n*iters/time1
+
+      call mpi_barrier(mpi_comm_world,mpierror)
+
+      call mpi_reduce(flop_a,flop_t,1,mpi_double,mpi_sum, 
+     &                0,mpi_comm_world,mpierror) 
+      
+
+      call mpi_reduce(dur_a,dur_t,1,mpi_double,mpi_max, 
+     &                0,mpi_comm_world,mpierror) 
+
+
+      if (myrank .eq. 0) then
+
+#ifndef XSMM
+         write(6,1) "Initialization time: ",t0
+         write(6,1) "Time in ax(): ",  time1
+         write(6,1) "Averages Flops ", flop_t 
+ 1       format(a30,1e14.5) 
+
+#else
+!     Print Performance Summary and check results
+         call performance(dur_t, iters*procs, lx1, ly1, lz1, lelt)
+#endif
+      endif
+
+      call mpi_finalize(mpierror)
 
       stop
       end
+
 c-----------------------------------------------------------------------
       subroutine transpose(a,lda,b,ldb)
 c     Returns the transpone of vector b
@@ -167,11 +212,21 @@ c     Output: ur,us,ut         Input:u,n,D,Dt
       m1 = n+1
       m2 = m1*m1
 
+#ifndef XSMM
+#ifdef SIMD
+      call mxm_ism(D ,m1,u,m1,ur,m2)
+      do k=0,n
+         call mxm_ism(u(0,0,k),m1,Dt,m1,us(0,0,k),m1)
+      enddo
+      call mxm_ism(u,m2,Dt,m1,ut,m1)
+#else
       call mxm(D ,m1,u,m1,ur,m2)
       do k=0,n
          call mxm(u(0,0,k),m1,Dt,m1,us(0,0,k),m1)
       enddo
       call mxm(u,m2,Dt,m1,ut,m1)
+#endif
+#endif
 
       return
       end
@@ -188,6 +243,18 @@ c     Output: ur,us,ut         Input:u,N,D,Dt
       m2 = m1*m1
       m3 = m1*m1*m1
 
+#ifndef XSMM
+#ifdef SIMD
+      call mxm_ism(Dt,m1,ur,m1,u,m2)
+
+      do k=0,N
+         call mxm_ism(us(0,0,k),m1,D ,m1,w(0,0,k),m1)
+      enddo
+      call add2(u,w,m3)
+
+      call mxm_ism(ut,m2,D ,m1,w,m1)
+      call add2(u,w,m3)
+#else
       call mxm(Dt,m1,ur,m1,u,m2)
 
       do k=0,N
@@ -197,6 +264,8 @@ c     Output: ur,us,ut         Input:u,N,D,Dt
 
       call mxm(ut,m2,D ,m1,w,m1)
       call add2(u,w,m3)
+#endif
+#endif
 
       return
       end
@@ -212,3 +281,153 @@ c-----------------------------------------------------------------------
       return
       end
 c-----------------------------------------------------------------------
+
+
+#ifdef XSMM
+c-----------------------------------------------------------------------
+      subroutine ax_xsmm(w,u,gxyz,ur2,us2,ut2,wk2,n2,iters, duration) ! Matrix-vector product: w=A*u
+
+#ifdef XSMM
+      USE :: LIBXSMM
+      USE :: STREAM_UPDATE_KERNELS
+#endif
+
+      include 'SIZE'
+      include 'INPUT'
+
+
+      real w(lx1,ly1,lz1,lelt),u(lx1,ly1,lz1,lelt)
+      real wk(lx1,ly1,lz1,lelt)
+      real ur2(1), us2(1), ut2(1),wk2(1)
+
+      real gxyz(2*ldim,lx1,ly1,lz1,lelt)
+
+      real duration
+
+      parameter (lt=lx1*ly1*lz1*lelt)
+      common /mymask/cmask(-1:lx1*ly1*lz1*lelt)
+      
+      integer e
+      
+      INTEGER, PARAMETER :: T = KIND(0D0)
+      REAL, PARAMETER :: alpha = 1, beta0 = 0, beta1 = 1
+      
+      REAL, allocatable, dimension(:,:,:), target :: ur, us, ut
+      REAL, allocatable, target :: dx(:,:), dxt(:,:)
+      REAL, ALLOCATABLE,TARGET,SAVE :: tm1(:,:,:), tm2(:,:,:),
+     $     tm3(:,:,:)
+
+      TYPE(LIBXSMM_DMMFUNCTION) :: xmm1, xmm2, xmm3, xmm4, xmm5
+
+      DOUBLE PRECISION :: max_diff
+      INTEGER :: argc, m, n, k, routine, check
+      INTEGER(8) :: i, j, ix, iy, iz, r, s, size0, size1, size, 
+     $     start, it
+      CHARACTER(32) :: argv
+      s = lelt
+      size = s
+      ALLOCATE(ur(lx1,ly1,lz1), us(lx1,ly1,lz1), ut(lx1,ly1,lz1))
+      ALLOCATE(dx(lx1,lx1), dxt(ly1,ly1))
+
+! Initialize LIBXSMM
+      CALL libxsmm_init()
+
+!  Initialize 
+      do j = 1,ly1
+         do i = 1, lx1
+            dx(i,j)  = dxm1(i,j)
+            dxt(i,j) = dxtm1(i,j)
+         enddo
+      enddo
+
+c      call cpu_time(t1)
+
+! streamed 
+      
+!      WRITE(*, "(A)") " Streamed... (specialized)"
+      CALL libxsmm_dispatch(xmm1,lx1,ly1*lz1,lx1,alpha=alpha,beta=beta0)
+
+      CALL libxsmm_dispatch(xmm2,lx1,ly1,ly1,alpha=alpha,beta=beta0)
+      CALL libxsmm_dispatch(xmm3,lx1*ly1,lz1,lz1,alpha=alpha,beta=beta0)
+
+      CALL libxsmm_dispatch(xmm4,lx1,ly1,ly1,alpha=alpha,beta=beta1)
+      CALL libxsmm_dispatch(xmm5,lx1*ly1,lz1,lz1,alpha=alpha,beta=beta1)
+
+
+      IF (libxsmm_available(xmm1).AND.libxsmm_available(xmm2) 
+     $     .AND.libxsmm_available(xmm3).AND.libxsmm_available(xmm4)
+     $     .AND.libxsmm_available(xmm5)) THEN         
+
+         ALLOCATE(tm1(lx1,ly1,lz1), tm2(lx1,ly1,lz1), tm3(lx1,ly1,lz1))
+         tm1 = 0; tm2 = 0; tm3 = 0
+         start = libxsmm_timer_tick()
+
+         DO it = 1,iters
+
+         DO i = 1, lelt
+C local_grad3
+            CALL libxsmm_call(xmm1,  C_LOC(dx), C_LOC(u(1,1,1,i)),
+     $           C_LOC(ur(1,1,1)))
+            DO j = 1, ly1
+               CALL libxsmm_call(xmm2, C_LOC(u(1,1,j,i)), 
+     $              C_LOC(dxt), C_LOC(us(1,1,j)))
+            END DO
+            CALL libxsmm_call(xmm3, C_LOC(u(1,1,1,i)), C_LOC(dxt),
+     $           C_LOC(ut(1,1,1)))
+
+C local_grad3_t
+            CALL libxsmm_call(xmm1,  C_LOC(dxt), C_LOC(ur(1,1,1)),
+     $           C_LOC(w(1,1,1,i)))
+            DO j = 1, ly1
+               CALL libxsmm_call(xmm4, C_LOC(us(1,1,j)), 
+     $              C_LOC(dx), C_LOC(w(1,1,j,i)))
+            END DO
+            
+            CALL libxsmm_call(xmm5, C_LOC(ut(1,1,1)), C_LOC(dx),
+     $           C_LOC(w(1,1,1,i)))
+         END DO
+         END DO
+
+         duration = libxsmm_timer_duration(start, libxsmm_timer_tick())
+
+         DEALLOCATE(tm1, tm2, tm3)
+         DEALLOCATE(ur, us, ut)
+
+C         IF (check.NE.0) max_diff = MAX(max_diff, 
+C     $        validate(rx, ry, rz, cx, cy, cz))
+      ELSE
+         WRITE(*,*) "Could not build specialized function(s)!"
+      END IF
+
+
+! finalize LIBXSMM
+      CALL libxsmm_finalize()
+
+      return
+      end
+
+
+c-----------------------------------------------------------------------
+      SUBROUTINE performance(duration, iters, m, n, k, size)
+      DOUBLE PRECISION, INTENT(IN) :: duration
+      INTEGER, INTENT(IN)    :: m, n, k
+C      INTEGER(8), INTENT(IN) :: size
+      integer size
+      real T
+      T = 8.0
+      IF (0.LT.duration) THEN
+         WRITE(*, 2) CHAR(9), "performance:", 
+     $         (1D-9 * iters * size * m * n * k * (2*(m+n+k) - 3) / 
+     $        duration),     " GFLOPS/s"
+         WRITE(*, 2) CHAR(9), "bandwidth:  ", 
+     $        (size*m*n*k*(4)*T*iters / (duration * ISHFT(1_8, 30)))
+     $        , " GB/s"
+      END IF
+      WRITE(*, 2) CHAR(9), "duration:   ", (1D3 * duration), " ms"
+
+ 2    format(1A,A,F10.5,A)
+
+      return 
+      END
+
+#endif
