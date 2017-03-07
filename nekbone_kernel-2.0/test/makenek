@@ -7,8 +7,11 @@ SOURCE_ROOT="../src"
 
 # Fortran compiler
 #F77="ftn"
-F77="ifort"
-#F77="mpiifort"
+F77="mpiifort"
+
+# C compiler
+#CC="cc -std=c99"
+CC="mpiicc"
 
 # pre-processor symbol list 
 # (set PPLIST=? to get a list of available symbols)
@@ -17,16 +20,37 @@ F77="ifort"
 # OPTIONAL SETTINGS
 # -----------------
 
+# Enable SIMD (default false)
+#IFSIMD="true"
+
+# Enable XSMM (default false)
+#IFXSMM="true"
+
 # auxilliary files to compile
 # NOTE: source files have to located in the same directory as makenek
 #       a makefile_usr.inc has to be provided containing the build rules 
 #USR="foo.o"
+if [ "$IFSIMD" == "true" ]; then
+   IFXSMM="false"
+   USR="mxm_simd.o"
+elif [ "$IFXSMM" == "true" ]; then
+   IFSIMD="false"
+   USR_INCDIR="-I/cfs/klemming/nobackup/g/gongjing/projects/sessi/libxsmm/include"
+   USR_LFLAGS="-L/cfs/klemming/nobackup/g/gongjing/projects/sessi/libxsmm/lib -lxsmmf  -lxsmm -Wl,--start-group  /pdc/vol/intel/2017.1.132/mkl/lib/intel64/libmkl_intel_lp64.a /pdc/vol/intel/2017.1.132/mkl/lib/intel64/libmkl_core.a /pdc/vol/intel/2017.1.132/mkl/lib/intel64/libmkl_sequential.a -Wl,--end-group -lpthread -lm -ldl  ./libstream_update_kernels.a"   
+
+# USR_INCDIR="-I/cfs/klemming/nobackup/g/gongjing/projects/sessi/libxsmm/tegner/libxsmm/include"
+# USR_LFLAGS="-L/cfs/klemming/nobackup/g/gongjing/projects/sessi/libxsmm/tegner/libxsmm/lib -lxsmmf  -lxsmm -Wl,--start-group  /pdc/vol/i-compilers/17.0.1/mkl/lib/intel64/libmkl_intel_lp64.a /pdc/vol/i-compilers/17.0.1/mkl/lib/intel64/libmkl_core.a /pdc/vol/i-compilers/17.0.1/mkl/lib/intel64/libmkl_sequential.a -Wl,--end-group -lpthread -lm -ldl  ./libstream_update_kernels.a"  
+else
+   USR=""
+fi
 
 # linking flags
 #USR_LFLAGS="-L/usr/lib -lfoo"
 
 # generic compiler flags
-G="-g"
+G="-axCORE-AVX2 -mcmodel=medium -fPIC"
+# export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/pdc/vol/intel/2017.1.132/compilers_and_libraries/linux/lib/intel64
+
 
 # optimization flags
 #OPT_FLAGS_STD=""
