@@ -1,8 +1,10 @@
 # Nekbone_kernel with LIBXSMM/SIMD
 
-All the compilers/flags and defination in test/makenek
+All the compilers/flags and variables can be changed in test/makenek
 
 ### General information
+
+Set the F77/CC compilers
 
 ```
 # Fortran compiler
@@ -14,8 +16,9 @@ CC="mpiicc"
 
 ### Using the in-hourse SIMD implementation
 
-```
 uncomment out the variable "IFSIMD"
+
+```
 # Enable SIMD (default false)
 #IFSIMD="true"
 ```
@@ -28,15 +31,15 @@ uncomment out the variable "IFXSMM"
 # Enable XSMM (default false)
 #IFXSMM="true"
 ```
-In the case, include paths and linked libraried should be set
+In the case, include paths and linked libraries can be set
 
 ```
 USR_INCDIR="..."
-USR_INCDIR="..."
+USR_LDFLAGS="..."
 ```
 
-### the polynomial order and the number of elements per core can
-be set in fiel SIZE
+### file test/SIZE
+the polynomial order and the number of elements per core can be changed in the file SIZE
 
 ### Compiling and running the code
 
