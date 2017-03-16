@@ -417,10 +417,10 @@ C      INTEGER(8), INTENT(IN) :: size
       T = 8.0
       IF (0.LT.duration) THEN
          WRITE(*, 2) CHAR(9), "performance:", 
-     $         (1D-9 * iters * size * m * n * k * (2*(m+n+k) - 3) / 
+     $         (1D-9 * iters * size * m * n * k * (4*(m+n+k) - 4) / 
      $        duration),     " GFLOPS/s"
          WRITE(*, 2) CHAR(9), "bandwidth:  ", 
-     $        (size*m*n*k*(4)*T*iters / (duration * ISHFT(1_8, 30)))
+     $        (size*m*n*k*(2)*T*iters / (duration * ISHFT(1_8, 30)))
      $        , " GB/s"
       END IF
       WRITE(*, 2) CHAR(9), "duration:   ", (1D3 * duration), " ms"
