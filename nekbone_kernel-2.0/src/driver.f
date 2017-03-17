@@ -297,7 +297,6 @@ c-----------------------------------------------------------------------
 
 
       real w(lx1,ly1,lz1,lelt),u(lx1,ly1,lz1,lelt)
-      real wk(lx1,ly1,lz1,lelt)
       real ur2(1), us2(1), ut2(1),wk2(1)
 
       real gxyz(2*ldim,lx1,ly1,lz1,lelt)
@@ -315,7 +314,7 @@ c-----------------------------------------------------------------------
       REAL, allocatable, dimension(:,:,:), target :: ur, us, ut
       REAL, allocatable, target :: dx(:,:), dxt(:,:)
       REAL, ALLOCATABLE,TARGET,SAVE :: tm1(:,:,:), tm2(:,:,:),
-     $     tm3(:,:,:)
+     $     tm3(:,:,:), wk(:,:,:)
 
       TYPE(LIBXSMM_DMMFUNCTION) :: xmm1, xmm2, xmm3, xmm4, xmm5
 
@@ -327,6 +326,7 @@ c-----------------------------------------------------------------------
       s = lelt
       size = s
       ALLOCATE(ur(lx1,ly1,lz1), us(lx1,ly1,lz1), ut(lx1,ly1,lz1))
+      ALLOCATE(wk(lx1,ly1,lz1))
       ALLOCATE(dx(lx1,lx1), dxt(ly1,ly1))
 
 ! Initialize LIBXSMM
@@ -377,20 +377,22 @@ C local_grad3
 
 C local_grad3_t
             CALL libxsmm_call(xmm1,  C_LOC(dxt), C_LOC(ur(1,1,1)),
-     $           C_LOC(w(1,1,1,i)))
+     $           C_LOC(wk(1,1,1)))
             DO j = 1, ly1
                CALL libxsmm_call(xmm4, C_LOC(us(1,1,j)), 
-     $              C_LOC(dx), C_LOC(w(1,1,j,i)))
+     $              C_LOC(dx), C_LOC(wk(1,1,j)))
             END DO
             
             CALL libxsmm_call(xmm5, C_LOC(ut(1,1,1)), C_LOC(dx),
-     $           C_LOC(w(1,1,1,i)))
+     $           C_LOC(wk(1,1,1)))
+
+            CALL stream_vector_copy(wk(1,1,1),w(1,1,1,i),lxyz)
          END DO
          END DO
 
          duration = libxsmm_timer_duration(start, libxsmm_timer_tick())
 
-         DEALLOCATE(tm1, tm2, tm3)
+         DEALLOCATE(tm1, tm2, tm3, wk)
          DEALLOCATE(ur, us, ut)
 
 C         IF (check.NE.0) max_diff = MAX(max_diff, 
